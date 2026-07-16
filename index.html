@@ -410,10 +410,7 @@ function initGoogleAuth(){
     scope: DRIVE_SCOPE,
     callback: async (resp)=>{
       if(resp.error){
-        setGdriveStatus('Accesso non riuscito: riprova e scegli l\'account', 'err');
-        localStorage.removeItem('gdrive-was-signed-in');
-        btnGdrive.textContent = 'Accedi con Google';
-        gAccessToken = null;
+        setGdriveStatus('Accesso negato o annullato', 'err');
         return;
       }
       gAccessToken = resp.access_token;
@@ -434,11 +431,14 @@ function initGoogleAuth(){
       btnGdrive.textContent = 'Accedi con Google';
       setGdriveStatus('Non connesso a Google Drive');
     } else {
-      // select_account mostra sempre la schermata di scelta account,
-      // così puoi anche cambiare mail ogni volta che vuoi
-      gTokenClient.requestAccessToken({ prompt: 'select_account' });
+      gTokenClient.requestAccessToken({ prompt: 'consent' });
     }
   });
+
+  // Se in passato l'utente si era già collegato, prova un accesso silenzioso
+  if(localStorage.getItem('gdrive-was-signed-in') === '1'){
+    gTokenClient.requestAccessToken({ prompt: '' });
+  }
 }
 
 async function driveApiFetch(url, options={}){
