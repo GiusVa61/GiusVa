@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Il Ricettario</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500&family=Work+Sans:wght@400;500;600;700&display=swap');
+
+:root{
+  --paper: #FAF6EE;
+  --card: #F4EEE0;
+  --ink: #2E2A22;
+  --ink-soft: #6B6354;
+  --line: #E1D6BE;
+  --primary: #4F6B4A;
+  --primary-dark: #3C5238;
+  --primary-tint: #E7EEE3;
+
+  --cat-antipasti: #7C9473;
+  --cat-primi: #C1663D;
+  --cat-secondi: #A24B42;
+  --cat-dolci: #BF9327;
+
+  --font-display: 'Lora', serif;
+  --font-body: 'Work Sans', sans-serif;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background: var(--paper);
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(46,42,34,0.05) 1px, transparent 0);
+  background-size: 22px 22px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  min-height: 100vh;
+}
+
+#app{ max-width: 1100px; margin: 0 auto; padding: 40px 24px 80px; }
+
+/* ---------- Header ---------- */
+.hero{
+  display:flex; align-items:flex-end; justify-content:space-between; gap:24px;
+  margin-bottom: 34px; flex-wrap:wrap;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 22px;
+}
+.hero h1{
+  font-family:var(--font-display); font-weight:700; font-size:2.6rem;
+  margin:0; letter-spacing:-0.01em; color: var(--ink);
+}
+.hero p{
+  margin:6px 0 0; color:var(--ink-soft); font-size:0.98rem; max-width:420px;
+}
+.count-badge{
+  font-family:var(--font-body); font-size:0.78rem; letter-spacing:0.08em;
+  text-transform:uppercase; color:var(--ink-soft);
+  border:1px solid var(--line); border-radius:20px; padding:6px 14px;
+  white-space:nowrap;
+}
+
+/* ---------- Toolbar ---------- */
+.toolbar{
+  display:flex; flex-wrap:wrap; gap:14px; align-items:center;
+  margin-bottom: 28px;
+}
+.search-wrap{
+  position:relative; flex: 1 1 280px; min-width:240px;
+}
+.search-wrap svg{
+  position:absolute; left:14px; top:50%; transform:translateY(-50%);
+  width:16px; height:16px; stroke:var(--ink-soft); pointer-events:none;
+}
+#search{
+  width:100%; padding:12px 14px 12px 40px; border-radius:10px;
+  border:1px solid var(--line); background:#fff; font-family:var(--font-body);
+  font-size:0.95rem; color:var(--ink); outline:none;
+  transition: border-color .15s, box-shadow .15s;
+}
+#search:focus{ border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-tint); }
+#search::placeholder{ color:#B4A98F; }
+
+.chips{ display:flex; gap:8px; flex-wrap:wrap; }
+.chip{
+  font-family:var(--font-body); font-weight:600; font-size:0.82rem;
+  padding:9px 16px; border-radius:20px; border:1px solid var(--line);
+  background:#fff; color:var(--ink-soft); cursor:pointer;
+  transition: all .15s;
+}
+.chip:hover{ border-color:var(--primary); color:var(--ink); }
+.chip.active{
+  background:var(--primary); border-color:var(--primary); color:#fff;
+}
+
+.btn-add{
+  margin-left:auto;
+  font-family:var(--font-body); font-weight:600; font-size:0.9rem;
+  background:var(--primary); color:#fff; border:none; border-radius:10px;
+  padding:12px 20px; cursor:pointer; white-space:nowrap;
+  transition: background .15s, transform .1s;
+  display:flex; align-items:center; gap:8px;
+}
+.btn-add:hover{ background:var(--primary-dark); }
+.btn-add:active{ transform: scale(0.98); }
+
+/* ---------- Grid & Cards ---------- */
+#grid{
+  display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 28px 22px;
+}
+
+.card-wrap{ position:relative; padding-top:16px; }
+.tab{
+  position:absolute; top:0; left:18px; z-index:2;
+  font-family:var(--font-body); font-weight:700; font-size:0.65rem;
+  letter-spacing:0.09em; text-transform:uppercase; color:#fff;
+  padding:5px 12px 4px; border-radius:6px 6px 0 0;
+}
+.card{
+  background: var(--card);
+  border:1px solid var(--line);
+  border-radius: 4px 10px 10px 10px;
+  padding: 20px 18px 18px;
+  cursor:pointer;
+  box-shadow: 0 1px 0 rgba(46,42,34,0.04);
+  transition: transform .15s, box-shadow .15s;
+  height:100%;
+  display:flex; flex-direction:column;
+}
+.card:hover{
+  transform: translateY(-3px) rotate(-0.3deg);
+  box-shadow: 0 10px 22px rgba(46,42,34,0.12);
+}
+.card h3{
+  font-family:var(--font-display); font-size:1.28rem; font-weight:600;
+  margin:2px 0 8px; color:var(--ink); line-height:1.25;
+}
+.card .meta{
+  font-size:0.78rem; color:var(--ink-soft); margin-bottom:12px;
+  display:flex; gap:12px;
+}
+.card .ingredients-preview{
+  font-size:0.86rem; color:var(--ink-soft); line-height:1.5;
+  border-top:1px dashed var(--line); padding-top:10px; margin-top:auto;
+}
+.card .ingredients-preview b{ color:var(--ink); font-weight:600; }
+
+/* ---------- Empty state ---------- */
+.empty{
+  grid-column: 1 / -1;
+  text-align:center; padding: 70px 20px;
+  border:1px dashed var(--line); border-radius:14px;
+  color:var(--ink-soft);
+}
+.empty h3{ font-family:var(--font-display); color:var(--ink); font-size:1.4rem; margin-bottom:8px;}
+.empty button{
+  margin-top:18px; background:var(--primary); color:#fff; border:none;
+  padding:11px 20px; border-radius:10px; font-family:var(--font-body);
+  font-weight:600; cursor:pointer; font-size:0.9rem;
+}
+
+/* ---------- Modal ---------- */
+.overlay{
+  position:fixed; inset:0; background:rgba(46,42,34,0.45);
+  display:flex; align-items:flex-start; justify-content:center;
+  padding: 5vh 20px; overflow-y:auto; z-index:50;
+  opacity:0; pointer-events:none; transition:opacity .18s;
+}
+.overlay.open{ opacity:1; pointer-events:auto; }
+.modal{
+  background:var(--paper); border-radius:16px; max-width:640px; width:100%;
+  padding: 32px 32px 28px; position:relative;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+  transform: translateY(-8px); transition: transform .18s;
+}
+.overlay.open .modal{ transform: translateY(0); }
+.modal-close{
+  position:absolute; top:18px; right:18px; background:none; border:none;
+  cursor:pointer; color:var(--ink-soft); width:32px; height:32px;
+  border-radius:8px; display:flex; align-items:center; justify-content:center;
+}
+.modal-close:hover{ background:var(--line); color:var(--ink); }
+
+.modal h2{
+  font-family:var(--font-display); font-size:1.7rem; margin:0 18px 20px 0;
+  padding-right:20px;
+}
+.field{ margin-bottom:16px; }
+.field label{
+  display:block; font-size:0.78rem; font-weight:600; letter-spacing:0.05em;
+  text-transform:uppercase; color:var(--ink-soft); margin-bottom:6px;
+}
+.field input, .field select, .field textarea{
+  width:100%; padding:10px 12px; border-radius:9px; border:1px solid var(--line);
+  font-family:var(--font-body); font-size:0.94rem; color:var(--ink);
+  background:#fff; outline:none; resize:vertical;
+}
+.field input:focus, .field select:focus, .field textarea:focus{
+  border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-tint);
+}
+.field small{ color:var(--ink-soft); font-size:0.76rem; }
+.row2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+
+.cat-select{ display:flex; gap:8px; flex-wrap:wrap; }
+.cat-opt{
+  flex:1; min-width:100px; text-align:center; padding:10px 8px; border-radius:9px;
+  border:1.5px solid var(--line); cursor:pointer; font-size:0.82rem; font-weight:600;
+  color:var(--ink-soft); background:#fff; transition:all .12s;
+}
+.cat-opt.selected{ color:#fff; }
+
+.modal-actions{
+  display:flex; justify-content:flex-end; gap:10px; margin-top:22px;
+  padding-top:18px; border-top:1px solid var(--line);
+}
+.btn-secondary{
+  background:none; border:1px solid var(--line); color:var(--ink-soft);
+  padding:10px 18px; border-radius:9px; font-family:var(--font-body);
+  font-weight:600; cursor:pointer; font-size:0.88rem;
+}
+.btn-primary{
+  background:var(--primary); border:none; color:#fff;
+  padding:10px 20px; border-radius:9px; font-family:var(--font-body);
+  font-weight:600; cursor:pointer; font-size:0.88rem;
+}
+.btn-primary:hover{ background:var(--primary-dark); }
+.btn-danger{
+  background:none; border:1px solid #C1663D; color:#C1663D;
+  padding:10px 16px; border-radius:9px; font-family:var(--font-body);
+  font-weight:600; cursor:pointer; font-size:0.88rem; margin-right:auto;
+}
+
+/* Detail view */
+.detail-badge{
+  display:inline-block; font-size:0.68rem; font-weight:700; letter-spacing:0.08em;
+  text-transform:uppercase; color:#fff; padding:4px 12px; border-radius:20px;
+  margin-bottom:12px;
+}
+.detail-meta{ display:flex; gap:18px; color:var(--ink-soft); font-size:0.85rem; margin-bottom:20px; }
+.detail-section h4{
+  font-family:var(--font-body); font-size:0.78rem; font-weight:700; letter-spacing:0.07em;
+  text-transform:uppercase; color:var(--ink-soft); margin:20px 0 10px;
+}
+.detail-section ul{ margin:0; padding-left:20px; color:var(--ink); }
+.detail-section ul li{ margin-bottom:6px; line-height:1.45; }
+.detail-section ol{ margin:0; padding-left:20px; color:var(--ink); }
+.detail-section ol li{ margin-bottom:10px; line-height:1.5; }
+.detail-notes{ color:var(--ink-soft); font-style:italic; font-size:0.9rem; line-height:1.5; }
+
+mark{ background: #F0DDA6; color:inherit; border-radius:2px; padding:0 1px; }
+
+.loading-msg{ text-align:center; padding:60px; color:var(--ink-soft); grid-column:1/-1; }
+
+@media (max-width:560px){
+  .hero h1{ font-size:2rem; }
+  .row2{ grid-template-columns:1fr; }
+  .btn-add{ margin-left:0; width:100%; justify-content:center; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="hero">
+    <div>
+      <h1>Il Ricettario</h1>
+      <p>La tua raccolta di ricette, sempre a portata di mano.</p>
+    </div>
+    <div class="count-badge" id="countBadge">0 ricette</div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" type="text" placeholder="Cerca per nome o ingrediente…" autocomplete="off">
+    </div>
+    <div class="chips" id="chips"></div>
+    <button class="btn-add" id="btnAdd">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Nuova ricetta
+    </button>
+  </div>
+
+  <div id="grid"><div class="loading-msg">Caricamento del ricettario…</div></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+const CATS = [
+  { key:'antipasti', label:'Antipasti', color:'var(--cat-antipasti)' },
+  { key:'primi', label:'Primi', color:'var(--cat-primi)' },
+  { key:'secondi', label:'Secondi', color:'var(--cat-secondi)' },
+  { key:'dolci', label:'Dolci', color:'var(--cat-dolci)' },
+];
+const catMap = Object.fromEntries(CATS.map(c=>[c.key,c]));
+
+let recipes = [];
+let activeCat = 'tutte';
+let searchTerm = '';
+let editingId = null;
+
+const grid = document.getElementById('grid');
+const chipsEl = document.getElementById('chips');
+const countBadge = document.getElementById('countBadge');
+const overlay = document.getElementById('overlay');
+const modalContent = document.getElementById('modalContent');
+
+function uid(){ return 'r' + Date.now() + Math.random().toString(36).slice(2,7); }
+
+function normalize(s){
+  return (s||'').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+async function loadRecipes(){
+  try{
+    const raw = localStorage.getItem('ricette-list');
+    recipes = raw ? JSON.parse(raw) : [];
+  }catch(e){
+    console.error('Errore nel caricamento', e);
+    recipes = [];
+  }
+  render();
+}
+
+async function saveRecipes(){
+  try{
+    localStorage.setItem('ricette-list', JSON.stringify(recipes));
+  }catch(e){
+    console.error('Errore nel salvataggio', e);
+    alert('Impossibile salvare: spazio di archiviazione del browser esaurito o non disponibile.');
+  }
+}
+
+function renderChips(){
+  const all = [{key:'tutte', label:'Tutte', color:'var(--primary)'}, ...CATS];
+  chipsEl.innerHTML = all.map(c => `
+    <button class="chip ${activeCat===c.key?'active':''}" data-cat="${c.key}"
+      style="${activeCat===c.key ? `background:${c.color};border-color:${c.color};` : ''}">
+      ${c.label}
+    </button>`).join('');
+  chipsEl.querySelectorAll('.chip').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ activeCat = btn.dataset.cat; render(); });
+  });
+}
+
+function highlight(text, term){
+  if(!term) return text;
+  const norm = normalize(text);
+  const idx = norm.indexOf(term);
+  if(idx === -1) return text;
+  return text.slice(0,idx) + '<mark>' + text.slice(idx, idx+term.length) + '</mark>' + text.slice(idx+term.length);
+}
+
+function matchesSearch(r, term){
+  if(!term) return true;
+  if(normalize(r.name).includes(term)) return true;
+  return r.ingredients.some(i => normalize(i).includes(term));
+}
+
+function render(){
+  renderChips();
+  const term = normalize(searchTerm);
+  const filtered = recipes
+    .filter(r => activeCat==='tutte' || r.category===activeCat)
+    .filter(r => matchesSearch(r, term))
+    .sort((a,b)=> a.name.localeCompare(b.name, 'it'));
+
+  countBadge.textContent = `${recipes.length} ricett${recipes.length===1?'a':'e'}`;
+
+  if(filtered.length === 0){
+    grid.innerHTML = `<div class="empty">
+      <h3>${recipes.length===0 ? 'Il tuo ricettario è ancora vuoto' : 'Nessuna ricetta trovata'}</h3>
+      <p>${recipes.length===0 ? 'Aggiungi la tua prima ricetta per iniziare a costruire la tua raccolta.' : 'Prova a cambiare categoria o termine di ricerca.'}</p>
+      ${recipes.length===0 ? '<button id="emptyAdd">+ Aggiungi ricetta</button>' : ''}
+    </div>`;
+    const eb = document.getElementById('emptyAdd');
+    if(eb) eb.addEventListener('click', ()=> openAddForm());
+    return;
+  }
+
+  grid.innerHTML = filtered.map(r=>{
+    const cat = catMap[r.category];
+    const previewIng = r.ingredients.slice(0,3).join(', ') + (r.ingredients.length>3 ? '…' : '');
+    return `
+    <div class="card-wrap">
+      <div class="tab" style="background:${cat.color}">${cat.label}</div>
+      <div class="card" data-id="${r.id}">
+        <h3>${highlight(r.name, term)}</h3>
+        <div class="meta">
+          ${r.time ? `<span>⏱ ${r.time}</span>` : ''}
+          ${r.servings ? `<span>${r.servings} porz.</span>` : ''}
+        </div>
+        <div class="ingredients-preview"><b>Ingredienti:</b> ${highlight(previewIng, term)}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.card').forEach(c=>{
+    c.addEventListener('click', ()=> openDetail(c.dataset.id));
+  });
+}
+
+document.getElementById('search').addEventListener('input', (e)=>{
+  searchTerm = e.target.value;
+  render();
+});
+document.getElementById('btnAdd').addEventListener('click', ()=> openAddForm());
+overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
+
+function closeModal(){ overlay.classList.remove('open'); editingId=null; }
+
+function openDetail(id){
+  const r = recipes.find(x=>x.id===id);
+  if(!r) return;
+  const cat = catMap[r.category];
+  modalContent.innerHTML = `
+    <button class="modal-close" onclick="closeModal()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <div class="detail-badge" style="background:${cat.color}">${cat.label}</div>
+    <h2>${r.name}</h2>
+    <div class="detail-meta">
+      ${r.time ? `<span>⏱ ${r.time}</span>` : ''}
+      ${r.servings ? `<span>${r.servings} porzioni</span>` : ''}
+    </div>
+    <div class="detail-section">
+      <h4>Ingredienti</h4>
+      <ul>${r.ingredients.map(i=>`<li>${i}</li>`).join('')}</ul>
+    </div>
+    <div class="detail-section">
+      <h4>Preparazione</h4>
+      <ol>${r.steps.map(s=>`<li>${s}</li>`).join('')}</ol>
+    </div>
+    ${r.notes ? `<div class="detail-section"><h4>Note</h4><p class="detail-notes">${r.notes}</p></div>` : ''}
+    <div class="modal-actions">
+      <button class="btn-danger" id="deleteBtn">Elimina</button>
+      <button class="btn-secondary" onclick="closeModal()">Chiudi</button>
+      <button class="btn-primary" id="editBtn">Modifica</button>
+    </div>
+  `;
+  document.getElementById('editBtn').addEventListener('click', ()=> openAddForm(r));
+  document.getElementById('deleteBtn').addEventListener('click', async ()=>{
+    if(confirm(`Eliminare la ricetta "${r.name}"?`)){
+      recipes = recipes.filter(x=>x.id!==id);
+      await saveRecipes();
+      closeModal();
+      render();
+    }
+  });
+  overlay.classList.add('open');
+}
+
+function openAddForm(existing){
+  editingId = existing ? existing.id : null;
+  const r = existing || { name:'', category:'antipasti', time:'', servings:'', ingredients:[''], steps:[''], notes:'' };
+
+  modalContent.innerHTML = `
+    <button class="modal-close" onclick="closeModal()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <h2>${existing ? 'Modifica ricetta' : 'Nuova ricetta'}</h2>
+    <div class="field">
+      <label>Nome ricetta</label>
+      <input id="f-name" type="text" placeholder="Es. Tagliatelle al ragù" value="${r.name.replace(/"/g,'&quot;')}">
+    </div>
+    <div class="field">
+      <label>Categoria</label>
+      <div class="cat-select" id="f-cat">
+        ${CATS.map(c=>`<div class="cat-opt ${r.category===c.key?'selected':''}" data-cat="${c.key}"
+          style="${r.category===c.key?`background:${c.color};border-color:${c.color};`:''}">${c.label}</div>`).join('')}
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Tempo di preparazione</label>
+        <input id="f-time" type="text" placeholder="Es. 30 min" value="${r.time}">
+      </div>
+      <div class="field">
+        <label>Porzioni</label>
+        <input id="f-servings" type="text" placeholder="Es. 4" value="${r.servings}">
+      </div>
+    </div>
+    <div class="field">
+      <label>Ingredienti <small>(uno per riga)</small></label>
+      <textarea id="f-ingredients" rows="5" placeholder="200g di farina&#10;2 uova&#10;...">${r.ingredients.join('\n')}</textarea>
+    </div>
+    <div class="field">
+      <label>Preparazione <small>(un passaggio per riga)</small></label>
+      <textarea id="f-steps" rows="5" placeholder="Impastare la farina con le uova&#10;Lasciar riposare 30 minuti&#10;...">${r.steps.join('\n')}</textarea>
+    </div>
+    <div class="field">
+      <label>Note <small>(opzionale)</small></label>
+      <textarea id="f-notes" rows="2" placeholder="Varianti, consigli, abbinamenti…">${r.notes||''}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Annulla</button>
+      <button class="btn-primary" id="saveBtn">Salva ricetta</button>
+    </div>
+  `;
+
+  let selectedCat = r.category;
+  document.querySelectorAll('#f-cat .cat-opt').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      selectedCat = el.dataset.cat;
+      document.querySelectorAll('#f-cat .cat-opt').forEach(o=>{
+        o.classList.remove('selected'); o.style.background=''; o.style.borderColor='';
+      });
+      el.classList.add('selected');
+      el.style.background = catMap[selectedCat].color;
+      el.style.borderColor = catMap[selectedCat].color;
+    });
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', async ()=>{
+    const name = document.getElementById('f-name').value.trim();
+    if(!name){ alert('Inserisci il nome della ricetta.'); return; }
+    const ingredients = document.getElementById('f-ingredients').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const steps = document.getElementById('f-steps').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const newRecipe = {
+      id: editingId || uid(),
+      name,
+      category: selectedCat,
+      time: document.getElementById('f-time').value.trim(),
+      servings: document.getElementById('f-servings').value.trim(),
+      ingredients: ingredients.length ? ingredients : ['-'],
+      steps: steps.length ? steps : ['-'],
+      notes: document.getElementById('f-notes').value.trim(),
+    };
+    if(editingId){
+      recipes = recipes.map(x => x.id===editingId ? newRecipe : x);
+    } else {
+      recipes.push(newRecipe);
+    }
+    await saveRecipes();
+    closeModal();
+    render();
+  });
+
+  overlay.classList.add('open');
+}
+
+window.closeModal = closeModal;
+loadRecipes();
+</script>
+</body>
+</html>
