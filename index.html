@@ -219,25 +219,6 @@ body{
   padding:10px 18px; border-radius:9px; font-family:var(--font-body);
   font-weight:600; cursor:pointer; font-size:0.88rem;
 }
-.btn-icon{
-  display:inline-flex; align-items:center; gap:6px;
-  background:none; border:1px solid var(--line); color:var(--ink-soft);
-  font-family:var(--font-body); font-weight:600; font-size:0.88rem;
-  padding:10px 16px; border-radius:9px; cursor:pointer;
-}
-.btn-icon:hover{ border-color:var(--primary); color:var(--ink); }
-.btn-icon svg{ width:16px; height:16px; }
-
-@media print{
-  body *{ visibility:hidden; }
-  .overlay{ position:static; padding:0; background:none; opacity:1; pointer-events:auto; }
-  .modal, .modal *{ visibility:visible; }
-  .modal{
-    position:absolute; top:0; left:0; width:100%; max-width:100%;
-    box-shadow:none; transform:none; padding:0;
-  }
-  .modal-close, .modal-actions, .toolbar, header, .count-badge{ display:none !important; }
-}
 .btn-primary{
   background:var(--primary); border:none; color:#fff;
   padding:10px 20px; border-radius:9px; font-family:var(--font-body);
@@ -277,7 +258,24 @@ mark{ background: #F0DDA6; color:inherit; border-radius:2px; padding:0 1px; }
   .btn-add{ margin-left:0; width:100%; justify-content:center; }
 }
 
+/* ---------- Google Drive sync ---------- */
+.gdrive-box{
+  display:flex; align-items:center; gap:10px;
+  border:1px solid var(--line); background:#fff; border-radius:10px;
+  padding:9px 14px; font-size:0.85rem; color:var(--ink-soft);
+}
+.gdrive-box svg{ width:16px; height:16px; flex:none; }
+.btn-gdrive{
+  font-family:var(--font-body); font-weight:600; font-size:0.85rem;
+  background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:8px;
+  padding:7px 12px; cursor:pointer; white-space:nowrap;
+}
+.btn-gdrive:hover{ border-color:var(--primary); }
+.gdrive-status{ font-size:0.8rem; }
+.gdrive-status.ok{ color:var(--primary-dark); }
+.gdrive-status.err{ color:var(--cat-secondi); }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div id="app">
@@ -287,6 +285,12 @@ mark{ background: #F0DDA6; color:inherit; border-radius:2px; padding:0 1px; }
       <p>La tua raccolta di ricette, sempre a portata di mano.</p>
     </div>
     <div class="count-badge" id="countBadge">0 ricette</div>
+  </div>
+
+  <div class="gdrive-box" id="gdriveBox" style="margin-bottom:18px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 20h18L12 2Z"/></svg>
+    <span class="gdrive-status" id="gdriveStatus">Non connesso a Google Drive</span>
+    <button class="btn-gdrive" id="btnGdrive">Accedi con Google</button>
   </div>
 
   <div class="toolbar">
@@ -353,6 +357,154 @@ async function saveRecipes(){
     console.error('Errore nel salvataggio', e);
     alert('Impossibile salvare: spazio di archiviazione del browser esaurito o non disponibile.');
   }
+  queueDriveSync();
+}
+
+/* ================= Google Drive sync =================
+   Config: sostituisci con il Client ID creato su Google Cloud Console
+   (vedi istruzioni fornite). Nessun client secret richiesto: qui usiamo
+   solo il flusso OAuth lato browser (Google Identity Services). */
+const GOOGLE_CLIENT_ID = '1037611563563-89sd7m80smh7bc6l9722peajcmt4l5ad.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_FILENAME = 'ricette-list.json';
+
+let gAccessToken = null;
+let gDriveFileId = null;
+let gTokenClient = null;
+let driveSyncTimer = null;
+
+const gdriveStatus = document.getElementById('gdriveStatus');
+const btnGdrive = document.getElementById('btnGdrive');
+
+function setGdriveStatus(text, cls){
+  gdriveStatus.textContent = text;
+  gdriveStatus.className = 'gdrive-status' + (cls ? ' ' + cls : '');
+}
+
+function initGoogleAuth(){
+  if(typeof google === 'undefined' || !google.accounts){
+    setGdriveStatus('Libreria Google non caricata', 'err');
+    return;
+  }
+  gTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: async (resp)=>{
+      if(resp.error){
+        setGdriveStatus('Accesso negato o annullato', 'err');
+        return;
+      }
+      gAccessToken = resp.access_token;
+      localStorage.setItem('gdrive-was-signed-in', '1');
+      btnGdrive.textContent = 'Disconnetti';
+      setGdriveStatus('Connessione a Drive…');
+      await driveInitialSync();
+    },
+  });
+
+  btnGdrive.addEventListener('click', ()=>{
+    if(gAccessToken){
+      // Disconnetti (solo lato app: revoca il token corrente)
+      google.accounts.oauth2.revoke(gAccessToken, ()=>{});
+      gAccessToken = null;
+      gDriveFileId = null;
+      localStorage.removeItem('gdrive-was-signed-in');
+      btnGdrive.textContent = 'Accedi con Google';
+      setGdriveStatus('Non connesso a Google Drive');
+    } else {
+      gTokenClient.requestAccessToken({ prompt: 'consent' });
+    }
+  });
+
+  // Se in passato l'utente si era già collegato, prova un accesso silenzioso
+  if(localStorage.getItem('gdrive-was-signed-in') === '1'){
+    gTokenClient.requestAccessToken({ prompt: '' });
+  }
+}
+
+async function driveApiFetch(url, options={}){
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...(options.headers||{}), Authorization: `Bearer ${gAccessToken}` },
+  });
+  if(!res.ok){
+    const errText = await res.text().catch(()=> '');
+    throw new Error(`Drive API error ${res.status}: ${errText}`);
+  }
+  return res;
+}
+
+async function driveFindFile(){
+  const q = encodeURIComponent(`name='${DRIVE_FILENAME}' and trashed=false`);
+  const res = await driveApiFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&spaces=drive`);
+  const data = await res.json();
+  return (data.files && data.files[0]) || null;
+}
+
+async function driveDownload(fileId){
+  const res = await driveApiFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+  return res.json();
+}
+
+async function driveUpload(fileId, content){
+  const body = JSON.stringify(content);
+  if(fileId){
+    await driveApiFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+  } else {
+    const boundary = 'ricette_boundary';
+    const metadata = { name: DRIVE_FILENAME, mimeType: 'application/json' };
+    const multipartBody =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+    const res = await driveApiFetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body: multipartBody,
+    });
+    const data = await res.json();
+    gDriveFileId = data.id;
+  }
+}
+
+async function driveInitialSync(){
+  try{
+    const file = await driveFindFile();
+    if(file){
+      gDriveFileId = file.id;
+      const remote = await driveDownload(file.id);
+      if(Array.isArray(remote)){
+        // Il file su Drive è la fonte di verità al primo collegamento
+        recipes = remote;
+        localStorage.setItem('ricette-list', JSON.stringify(recipes));
+        render();
+      }
+    } else {
+      // Nessun file remoto: crealo con i dati locali attuali
+      await driveUpload(null, recipes);
+    }
+    setGdriveStatus('Sincronizzato con Google Drive', 'ok');
+  }catch(e){
+    console.error(e);
+    setGdriveStatus('Errore di sincronizzazione', 'err');
+  }
+}
+
+function queueDriveSync(){
+  if(!gAccessToken) return; // non collegato: solo salvataggio locale
+  clearTimeout(driveSyncTimer);
+  driveSyncTimer = setTimeout(async ()=>{
+    try{
+      await driveUpload(gDriveFileId, recipes);
+      setGdriveStatus('Sincronizzato con Google Drive', 'ok');
+    }catch(e){
+      console.error(e);
+      setGdriveStatus('Errore di sincronizzazione', 'err');
+    }
+  }, 800);
 }
 
 function renderChips(){
@@ -431,40 +583,6 @@ document.getElementById('search').addEventListener('input', (e)=>{
 document.getElementById('btnAdd').addEventListener('click', ()=> openAddForm());
 overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
 
-function buildRecipeText(r){
-  const cat = catMap[r.category];
-  let text = `${r.name}\n`;
-  if(cat) text += `${cat.label}\n`;
-  if(r.time || r.servings){
-    const meta = [r.time ? `⏱ ${r.time}` : '', r.servings ? `${r.servings} porzioni` : ''].filter(Boolean);
-    text += meta.join(' · ') + '\n';
-  }
-  text += `\nIngredienti:\n` + r.ingredients.map(i=>`- ${i}`).join('\n');
-  text += `\n\nPreparazione:\n` + r.steps.map((s,i)=>`${i+1}. ${s}`).join('\n');
-  if(r.notes) text += `\n\nNote:\n${r.notes}`;
-  return text;
-}
-
-async function shareRecipe(r){
-  const text = buildRecipeText(r);
-  if(navigator.share){
-    try{
-      await navigator.share({ title: r.name, text });
-      return;
-    }catch(e){
-      if(e.name === 'AbortError') return; // l'utente ha annullato la condivisione
-      // altrimenti si passa al fallback qui sotto
-    }
-  }
-  try{
-    await navigator.clipboard.writeText(text);
-    alert('La ricetta è stata copiata negli appunti: incollala dove vuoi (WhatsApp, email, note...).');
-  }catch(e){
-    console.error(e);
-    alert('Impossibile condividere o copiare automaticamente. Copia manualmente il testo dalla scheda.');
-  }
-}
-
 function closeModal(){ overlay.classList.remove('open'); editingId=null; }
 
 function openDetail(id){
@@ -492,21 +610,11 @@ function openDetail(id){
     ${r.notes ? `<div class="detail-section"><h4>Note</h4><p class="detail-notes">${r.notes}</p></div>` : ''}
     <div class="modal-actions">
       <button class="btn-danger" id="deleteBtn">Elimina</button>
-      <button class="btn-icon" id="printBtn" title="Stampa la scheda">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
-        Stampa
-      </button>
-      <button class="btn-icon" id="shareBtn" title="Condividi la ricetta">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5 15.4 17M15.4 7l-6.8 4"/></svg>
-        Condividi
-      </button>
       <button class="btn-secondary" onclick="closeModal()">Chiudi</button>
       <button class="btn-primary" id="editBtn">Modifica</button>
     </div>
   `;
   document.getElementById('editBtn').addEventListener('click', ()=> openAddForm(r));
-  document.getElementById('printBtn').addEventListener('click', ()=> window.print());
-  document.getElementById('shareBtn').addEventListener('click', ()=> shareRecipe(r));
   document.getElementById('deleteBtn').addEventListener('click', async ()=>{
     if(confirm(`Eliminare la ricetta "${r.name}"?`)){
       recipes = recipes.filter(x=>x.id!==id);
@@ -609,6 +717,7 @@ function openAddForm(existing){
 
 window.closeModal = closeModal;
 loadRecipes();
+window.addEventListener('load', initGoogleAuth);
 </script>
 </body>
 </html>
