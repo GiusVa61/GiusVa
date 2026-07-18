@@ -372,6 +372,14 @@ mark{ background: #F0DDA6; color:inherit; border-radius:2px; padding:0 1px; }
 .gdrive-status{ font-size:0.8rem; }
 .gdrive-status.ok{ color:var(--primary-dark); }
 .gdrive-status.err{ color:var(--cat-secondi); }
+
+/* ---------- Valutazione a stelle ---------- */
+.rating{ display:inline-flex; gap:2px; margin-bottom:10px; }
+.rating svg{ width:14px; height:14px; }
+.rating-interactive{ display:inline-flex; gap:5px; margin-bottom:18px; }
+.rating-interactive span{ cursor:pointer; line-height:0; transition:transform .1s; }
+.rating-interactive span:hover{ transform:scale(1.18); }
+.rating-interactive svg{ width:23px; height:23px; }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -483,6 +491,22 @@ function applyStoredData(parsed){
     recipes = [];
     shoppingList = [];
   }
+  // Compatibilità con ricette salvate prima dell'introduzione della valutazione
+  recipes = recipes.map(r => ({ rating: 0, ...r }));
+}
+
+function starIcon(filled){
+  return filled
+    ? `<svg viewBox="0 0 24 24" fill="#C9A227" stroke="#C9A227" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+}
+
+function renderStarsReadonly(rating){
+  if(!rating) return '';
+  let html = '<div class="rating">';
+  for(let i=1;i<=5;i++) html += starIcon(i<=rating);
+  html += '</div>';
+  return html;
 }
 
 async function loadRecipes(){
@@ -521,6 +545,8 @@ let gAccessToken = null;
 let gDriveFileId = null;
 let gTokenClient = null;
 let driveSyncTimer = null;
+let gTokenRefreshTimer = null;
+let gHasSyncedOnce = false;
 
 const gdriveStatus = document.getElementById('gdriveStatus');
 const btnGdrive = document.getElementById('btnGdrive');
@@ -528,6 +554,41 @@ const btnGdrive = document.getElementById('btnGdrive');
 function setGdriveStatus(text, cls){
   gdriveStatus.textContent = text;
   gdriveStatus.className = 'gdrive-status' + (cls ? ' ' + cls : '');
+}
+
+function scheduleTokenRefresh(expiresInSeconds){
+  clearTimeout(gTokenRefreshTimer);
+  const seconds = (typeof expiresInSeconds === 'number' && expiresInSeconds > 0) ? expiresInSeconds : 3600;
+  // Rinnova il token 5 minuti prima della scadenza, così la sincronizzazione
+  // non si interrompe mai durante l'uso dell'app.
+  const refreshInMs = Math.max((seconds - 300) * 1000, 30000);
+  gTokenRefreshTimer = setTimeout(()=>{
+    if(gTokenClient){
+      gTokenClient.requestAccessToken({ prompt: '' });
+    }
+  }, refreshInMs);
+}
+
+function silentTokenRefresh(){
+  return new Promise((resolve, reject)=>{
+    if(typeof google === 'undefined' || !google.accounts){
+      reject(new Error('Libreria Google non disponibile'));
+      return;
+    }
+    // Client dedicato al rinnovo silenzioso, per non interferire con il
+    // flusso di accesso principale gestito da initGoogleAuth.
+    const refreshClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: (resp)=>{
+        if(resp.error){ reject(new Error(resp.error)); return; }
+        gAccessToken = resp.access_token;
+        scheduleTokenRefresh(resp.expires_in);
+        resolve(resp.access_token);
+      },
+    });
+    refreshClient.requestAccessToken({ prompt: '' });
+  });
 }
 
 function initGoogleAuth(){
@@ -544,10 +605,17 @@ function initGoogleAuth(){
         return;
       }
       gAccessToken = resp.access_token;
+      scheduleTokenRefresh(resp.expires_in);
       localStorage.setItem('gdrive-was-signed-in', '1');
       btnGdrive.textContent = 'Disconnetti';
-      setGdriveStatus('Connessione a Drive…');
-      await driveInitialSync();
+      if(!gHasSyncedOnce){
+        gHasSyncedOnce = true;
+        setGdriveStatus('Connessione a Drive…');
+        await driveInitialSync();
+      } else {
+        // Rinnovo silenzioso del token: non serve rifare la sincronizzazione iniziale
+        setGdriveStatus('Sincronizzato con Google Drive', 'ok');
+      }
     },
   });
 
@@ -555,8 +623,10 @@ function initGoogleAuth(){
     if(gAccessToken){
       // Disconnetti (solo lato app: revoca il token corrente)
       google.accounts.oauth2.revoke(gAccessToken, ()=>{});
+      clearTimeout(gTokenRefreshTimer);
       gAccessToken = null;
       gDriveFileId = null;
+      gHasSyncedOnce = false;
       localStorage.removeItem('gdrive-was-signed-in');
       btnGdrive.textContent = 'Accedi con Google';
       setGdriveStatus('Non connesso a Google Drive');
@@ -571,11 +641,21 @@ function initGoogleAuth(){
   }
 }
 
-async function driveApiFetch(url, options={}){
+async function driveApiFetch(url, options={}, retried=false){
   const res = await fetch(url, {
     ...options,
     headers: { ...(options.headers||{}), Authorization: `Bearer ${gAccessToken}` },
   });
+  if(res.status === 401 && !retried){
+    // Il token è scaduto nel mezzo dell'uso: proviamo un rinnovo silenzioso
+    // e ripetiamo la richiesta una sola volta, invece di andare in errore.
+    try{
+      await silentTokenRefresh();
+      return driveApiFetch(url, options, true);
+    }catch(e){
+      throw new Error('Sessione Google scaduta: ricollegati a Drive.');
+    }
+  }
   if(!res.ok){
     const errText = await res.text().catch(()=> '');
     throw new Error(`Drive API error ${res.status}: ${errText}`);
@@ -715,6 +795,7 @@ function render(){
           ${r.time ? `<span>⏱ ${r.time}</span>` : ''}
           ${r.servings ? `<span>${r.servings} porz.</span>` : ''}
         </div>
+        ${renderStarsReadonly(r.rating)}
         <div class="ingredients-preview"><b>Ingredienti:</b> ${highlight(previewIng, term)}</div>
       </div>
     </div>`;
@@ -901,6 +982,7 @@ function openDetail(id){
       ${r.time ? `<span>⏱ ${r.time}</span>` : ''}
       ${r.servings ? `<span>${r.servings} porzioni</span>` : ''}
     </div>
+    <div id="detailRating"></div>
     <div class="detail-section">
       <h4>Ingredienti</h4>
       <ul>${r.ingredients.map(i=>`<li>${i}</li>`).join('')}</ul>
@@ -924,6 +1006,24 @@ function openDetail(id){
       <button class="btn-primary" id="editBtn">Modifica</button>
     </div>
   `;
+  function renderInteractiveRating(){
+    const wrap = document.getElementById('detailRating');
+    const current = r.rating || 0;
+    wrap.innerHTML = `<div class="rating-interactive">${
+      [1,2,3,4,5].map(i=>`<span data-star="${i}" title="${i} stell${i===1?'a':'e'}">${starIcon(i<=current)}</span>`).join('')
+    }</div>`;
+    wrap.querySelectorAll('[data-star]').forEach(el=>{
+      el.addEventListener('click', async ()=>{
+        const val = Number(el.dataset.star);
+        // Cliccando sulla stella già selezionata come valore massimo si azzera la valutazione
+        r.rating = (r.rating === val) ? 0 : val;
+        await saveRecipes();
+        renderInteractiveRating();
+      });
+    });
+  }
+  renderInteractiveRating();
+
   document.getElementById('editBtn').addEventListener('click', ()=> openAddForm(r));
   document.getElementById('printBtn').addEventListener('click', ()=> window.print());
   document.getElementById('shareBtn').addEventListener('click', ()=> shareRecipe(r));
@@ -1055,6 +1155,7 @@ function openAddForm(existing){
       steps: steps.length ? steps : ['-'],
       notes: document.getElementById('f-notes').value.trim(),
       image: selectedImage,
+      rating: r.rating || 0,
     };
     if(editingId){
       recipes = recipes.map(x => x.id===editingId ? newRecipe : x);
