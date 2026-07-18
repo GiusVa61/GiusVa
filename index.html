@@ -376,7 +376,7 @@ mark{ background: #F0DDA6; color:inherit; border-radius:2px; padding:0 1px; }
 /* ---------- Valutazione a stelle ---------- */
 .rating{ display:inline-flex; gap:2px; margin-bottom:10px; }
 .rating svg{ width:14px; height:14px; }
-.rating-interactive{ display:inline-flex; gap:5px; margin-bottom:18px; }
+.rating-interactive{ display:inline-flex; gap:5px; }
 .rating-interactive span{ cursor:pointer; line-height:0; transition:transform .1s; }
 .rating-interactive span:hover{ transform:scale(1.18); }
 .rating-interactive svg{ width:23px; height:23px; }
@@ -502,9 +502,8 @@ function starIcon(filled){
 }
 
 function renderStarsReadonly(rating){
-  if(!rating) return '';
   let html = '<div class="rating">';
-  for(let i=1;i<=5;i++) html += starIcon(i<=rating);
+  for(let i=1;i<=5;i++) html += starIcon(i<=(rating||0));
   html += '</div>';
   return html;
 }
@@ -982,7 +981,10 @@ function openDetail(id){
       ${r.time ? `<span>⏱ ${r.time}</span>` : ''}
       ${r.servings ? `<span>${r.servings} porzioni</span>` : ''}
     </div>
-    <div id="detailRating"></div>
+    <div class="field" style="margin-bottom:18px;">
+      <label>La tua valutazione</label>
+      <div id="detailRating"></div>
+    </div>
     <div class="detail-section">
       <h4>Ingredienti</h4>
       <ul>${r.ingredients.map(i=>`<li>${i}</li>`).join('')}</ul>
